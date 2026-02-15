@@ -11,6 +11,13 @@ jobs:
     name: Test action with defaults
 
     steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Start BACnet Simulator
         uses: rise-building-technology/bacnet-sim-ci@main
         id: sim
@@ -26,20 +33,29 @@ jobs:
 
       - name: Verify devices
         run: |
-          curl -sf http://localhost:8099/api/devices | python3 -m json.tool
+          DEVICES=$(curl -sf http://localhost:8099/api/devices)
+          echo "$DEVICES" | python3 -m json.tool
+
+          COUNT=$(echo "$DEVICES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+          test "$COUNT" -ge 1 && echo "PASS: $COUNT device(s) found" || { echo "FAIL: no devices"; exit 1; }
 
       - name: Verify read object
         run: |
           DEVICE_ID=$(curl -sf http://localhost:8099/api/devices | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['deviceId'])")
-          curl -sf "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-input/1" | python3 -m json.tool
+          RESP=$(curl -sf "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-input/1")
+          echo "$RESP" | python3 -m json.tool
 
-      - name: Verify write object
+          NAME=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+          test "$NAME" = "Zone Temp" && echo "PASS: Read object verified" || { echo "FAIL: got $NAME"; exit 1; }
+
+      - name: Verify write and read back
         run: |
           DEVICE_ID=$(curl -sf http://localhost:8099/api/devices | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['deviceId'])")
+
           curl -sf -X PUT \
             "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-output/1" \
             -H "Content-Type: application/json" \
-            -d '{"value": 99.9}' | python3 -m json.tool
+            -d '{"value": 99.9}'
 
           VALUE=$(curl -sf "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-output/1" | python3 -c "import sys,json; print(json.load(sys.stdin)['presentValue'])")
           test "$VALUE" = "99.9" && echo "PASS: Write/read verified" || { echo "FAIL: got $VALUE"; exit 1; }
@@ -53,6 +69,13 @@ jobs:
     name: Test action with custom inputs
 
     steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Start BACnet Simulator with custom settings
         uses: rise-building-technology/bacnet-sim-ci@main
         id: sim

@@ -12,6 +12,9 @@ jobs:
     services:
       bacnet-sim:
         image: ghcr.io/rise-building-technology/bacnet-sim-ci:latest
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
         ports:
           - 47808:47808/udp
           - 8099:8099
@@ -52,57 +55,31 @@ jobs:
           echo "=== Devices ==="
           curl -sf http://localhost:8099/api/devices | python3 -m json.tool
 
-      - name: List objects
+      - name: Read and write objects
         run: |
           DEVICE_ID=$(curl -sf http://localhost:8099/api/devices | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['deviceId'])")
           echo "Device ID: $DEVICE_ID"
 
-          echo "=== Objects ==="
-          curl -sf "http://localhost:8099/api/devices/$DEVICE_ID/objects" | python3 -m json.tool
-
-      - name: Read object
-        run: |
-          DEVICE_ID=$(curl -sf http://localhost:8099/api/devices | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['deviceId'])")
-
-          echo "=== Read analog-input/1 (Zone Temp) ==="
+          echo "=== Read Zone Temp ==="
           RESP=$(curl -sf "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-input/1")
           echo "$RESP" | python3 -m json.tool
-
           NAME=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
-          VALUE=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['presentValue'])")
-          echo "Name: $NAME, Value: $VALUE"
+          test "$NAME" = "Zone Temp" && echo "PASS: Read verified" || { echo "FAIL: got $NAME"; exit 1; }
 
-          if [ "$NAME" != "Zone Temp" ]; then
-            echo "FAIL: Expected name 'Zone Temp', got '$NAME'"
-            exit 1
-          fi
-
-      - name: Write and read back object
-        run: |
-          DEVICE_ID=$(curl -sf http://localhost:8099/api/devices | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['deviceId'])")
-
-          echo "=== Write 68.0 to analog-output/1 (Zone Setpoint) ==="
+          echo "=== Write Zone Setpoint ==="
           curl -sf -X PUT \
             "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-output/1" \
             -H "Content-Type: application/json" \
             -d '{"value": 68.0}' | python3 -m json.tool
 
           echo "=== Read back ==="
-          RESP=$(curl -sf "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-output/1")
-          echo "$RESP" | python3 -m json.tool
-
-          VALUE=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['presentValue'])")
-          if [ "$VALUE" != "68.0" ]; then
-            echo "FAIL: Expected 68.0, got $VALUE"
-            exit 1
-          fi
-          echo "PASS: Write/read verified"
+          VALUE=$(curl -sf "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-output/1" | python3 -c "import sys,json; print(json.load(sys.stdin)['presentValue'])")
+          test "$VALUE" = "68.0" && echo "PASS: Write/read verified" || { echo "FAIL: got $VALUE"; exit 1; }
 
       - name: Update network profile
         run: |
           DEVICE_ID=$(curl -sf http://localhost:8099/api/devices | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['deviceId'])")
 
-          echo "=== Set network profile to remote-site ==="
           RESP=$(curl -sf -X PUT \
             "http://localhost:8099/api/devices/$DEVICE_ID/network-profile" \
             -H "Content-Type: application/json" \
@@ -110,8 +87,4 @@ jobs:
           echo "$RESP" | python3 -m json.tool
 
           PROFILE=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['networkProfile'])")
-          if [ "$PROFILE" != "remote-site" ]; then
-            echo "FAIL: Expected 'remote-site', got '$PROFILE'"
-            exit 1
-          fi
-          echo "PASS: Network profile updated"
+          test "$PROFILE" = "remote-site" && echo "PASS: Network profile updated" || { echo "FAIL: got $PROFILE"; exit 1; }
