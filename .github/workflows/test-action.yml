@@ -11,13 +11,6 @@ jobs:
     name: Test action with defaults
 
     steps:
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Start BACnet Simulator
         uses: rise-building-technology/bacnet-sim-ci@main
         id: sim
@@ -69,13 +62,6 @@ jobs:
     name: Test action with custom inputs
 
     steps:
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Start BACnet Simulator with custom settings
         uses: rise-building-technology/bacnet-sim-ci@main
         id: sim

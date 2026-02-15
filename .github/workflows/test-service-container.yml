@@ -12,9 +12,6 @@ jobs:
     services:
       bacnet-sim:
         image: ghcr.io/rise-building-technology/bacnet-sim-ci:latest
-        credentials:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
         ports:
           - 47808:47808/udp
           - 8099:8099
