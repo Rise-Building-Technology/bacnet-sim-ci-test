@@ -1,0 +1,117 @@
+name: Test Service Container
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-service-container:
+    runs-on: ubuntu-latest
+
+    services:
+      bacnet-sim:
+        image: ghcr.io/rise-building-technology/bacnet-sim-ci:latest
+        ports:
+          - 47808:47808/udp
+          - 8099:8099
+        options: >-
+          --cap-add=NET_ADMIN
+          --health-cmd "curl -f http://localhost:8099/health/ready || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+          --health-start-period 15s
+
+    steps:
+      - name: Wait for simulator to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8099/health/ready; then
+              echo ""
+              echo "Simulator is ready!"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "ERROR: Simulator not ready after 30 seconds"
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Verify health endpoints
+        run: |
+          echo "=== Liveness ==="
+          curl -sf http://localhost:8099/health/live | python3 -m json.tool
+
+          echo "=== Readiness ==="
+          curl -sf http://localhost:8099/health/ready | python3 -m json.tool
+
+      - name: List devices
+        run: |
+          echo "=== Devices ==="
+          curl -sf http://localhost:8099/api/devices | python3 -m json.tool
+
+      - name: List objects
+        run: |
+          DEVICE_ID=$(curl -sf http://localhost:8099/api/devices | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['deviceId'])")
+          echo "Device ID: $DEVICE_ID"
+
+          echo "=== Objects ==="
+          curl -sf "http://localhost:8099/api/devices/$DEVICE_ID/objects" | python3 -m json.tool
+
+      - name: Read object
+        run: |
+          DEVICE_ID=$(curl -sf http://localhost:8099/api/devices | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['deviceId'])")
+
+          echo "=== Read analog-input/1 (Zone Temp) ==="
+          RESP=$(curl -sf "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-input/1")
+          echo "$RESP" | python3 -m json.tool
+
+          NAME=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+          VALUE=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['presentValue'])")
+          echo "Name: $NAME, Value: $VALUE"
+
+          if [ "$NAME" != "Zone Temp" ]; then
+            echo "FAIL: Expected name 'Zone Temp', got '$NAME'"
+            exit 1
+          fi
+
+      - name: Write and read back object
+        run: |
+          DEVICE_ID=$(curl -sf http://localhost:8099/api/devices | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['deviceId'])")
+
+          echo "=== Write 68.0 to analog-output/1 (Zone Setpoint) ==="
+          curl -sf -X PUT \
+            "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-output/1" \
+            -H "Content-Type: application/json" \
+            -d '{"value": 68.0}' | python3 -m json.tool
+
+          echo "=== Read back ==="
+          RESP=$(curl -sf "http://localhost:8099/api/devices/$DEVICE_ID/objects/analog-output/1")
+          echo "$RESP" | python3 -m json.tool
+
+          VALUE=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['presentValue'])")
+          if [ "$VALUE" != "68.0" ]; then
+            echo "FAIL: Expected 68.0, got $VALUE"
+            exit 1
+          fi
+          echo "PASS: Write/read verified"
+
+      - name: Update network profile
+        run: |
+          DEVICE_ID=$(curl -sf http://localhost:8099/api/devices | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['deviceId'])")
+
+          echo "=== Set network profile to remote-site ==="
+          RESP=$(curl -sf -X PUT \
+            "http://localhost:8099/api/devices/$DEVICE_ID/network-profile" \
+            -H "Content-Type: application/json" \
+            -d '{"profile": "remote-site"}')
+          echo "$RESP" | python3 -m json.tool
+
+          PROFILE=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['networkProfile'])")
+          if [ "$PROFILE" != "remote-site" ]; then
+            echo "FAIL: Expected 'remote-site', got '$PROFILE'"
+            exit 1
+          fi
+          echo "PASS: Network profile updated"
