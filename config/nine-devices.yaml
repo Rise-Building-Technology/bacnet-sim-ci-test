@@ -1,0 +1,31 @@
+global:
+  network_profile: local-network
+
+devices:
+  - device_id: 1001
+    name: AHU-1
+    template: ahu
+  - device_id: 1002
+    name: AHU-2
+    template: ahu
+  - device_id: 2001
+    name: VAV-101
+    template: vav
+  - device_id: 2002
+    name: VAV-102
+    template: vav
+  - device_id: 2003
+    name: VAV-201
+    template: vav
+  - device_id: 2004
+    name: VAV-202
+    template: vav
+  - device_id: 3001
+    name: Boiler-1
+    template: boiler
+  - device_id: 4001
+    name: Elec Meter Main
+    template: meter
+  - device_id: 4002
+    name: Elec Meter Floor2
+    template: meter

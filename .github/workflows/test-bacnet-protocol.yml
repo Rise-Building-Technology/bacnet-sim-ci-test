@@ -8,7 +8,7 @@ on:
 jobs:
   test-bacnet-protocol:
     runs-on: ubuntu-latest
-    name: BACnet/IP protocol smoke test
+    name: BACnet/IP protocol smoke test (9 devices)
 
     steps:
       # ---- Checkout both repos ----
@@ -31,7 +31,7 @@ jobs:
       - name: Build simulator image
         run: docker build -t bacnet-sim-ci:test ./bacnet-sim-ci
 
-      # ---- Start simulator ----
+      # ---- Start simulator with 9-device config ----
       - name: Start simulator container
         run: |
           docker run -d \
@@ -39,20 +39,29 @@ jobs:
             --network bacnet-test-net \
             --ip 172.20.0.10 \
             --cap-add=NET_ADMIN \
+            -v "$(realpath bacnet-sim-ci-test/config/nine-devices.yaml):/app/config/custom.yaml" \
+            -e CONFIG_FILE=/app/config/custom.yaml \
             bacnet-sim-ci:test
 
-      # ---- Wait for readiness ----
+      # ---- Wait for readiness (9 devices need more time) ----
       - name: Wait for simulator readiness
         run: |
-          echo "Waiting for simulator health endpoint..."
-          for i in $(seq 1 60); do
+          echo "Waiting for simulator health endpoint (9 devices)..."
+          for i in $(seq 1 90); do
             if docker exec bacnet-sim curl -sf http://localhost:8099/health/ready > /dev/null 2>&1; then
               echo "Simulator is ready! (${i}s)"
+              docker exec bacnet-sim curl -sf http://localhost:8099/api/devices | python3 -c "
+          import sys, json
+          devices = json.load(sys.stdin)
+          print(f'{len(devices)} device(s) running:')
+          for d in devices:
+              print(f'  {d[\"deviceId\"]} - {d[\"name\"]}')
+          "
               exit 0
             fi
             sleep 1
           done
-          echo "ERROR: Simulator not ready after 60 seconds"
+          echo "ERROR: Simulator not ready after 90 seconds"
           docker logs bacnet-sim
           exit 1
 
@@ -67,7 +76,9 @@ jobs:
             --name bacnet-test-client \
             --network bacnet-test-net \
             --ip 172.20.0.100 \
-            bacnet-test-client
+            bacnet-test-client \
+            --device-ip 172.20.0.10 \
+            --device-count 9
 
       # ---- Diagnostics on failure ----
       - name: Show simulator logs on failure

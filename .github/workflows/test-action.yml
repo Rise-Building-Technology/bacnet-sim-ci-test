@@ -57,6 +57,82 @@ jobs:
         if: always()
         run: docker rm -f bacnet-sim 2>/dev/null || true
 
+  test-action-multi-device:
+    runs-on: ubuntu-latest
+    name: Test action with 9-device config
+
+    steps:
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+        with:
+          path: bacnet-sim-ci-test
+
+      - name: Start BACnet Simulator with 9-device config
+        uses: rise-building-technology/bacnet-sim-ci@main
+        id: sim
+        with:
+          config-file: bacnet-sim-ci-test/config/nine-devices.yaml
+
+      - name: Verify 9 devices running
+        run: |
+          DEVICES=$(curl -sf http://localhost:8099/api/devices)
+          echo "$DEVICES" | python3 -m json.tool
+
+          COUNT=$(echo "$DEVICES" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+          test "$COUNT" -eq 9 && echo "PASS: $COUNT devices found" || { echo "FAIL: expected 9, got $COUNT"; exit 1; }
+
+      - name: Verify device IDs
+        run: |
+          DEVICE_IDS=$(curl -sf http://localhost:8099/api/devices | python3 -c "
+          import sys, json
+          ids = sorted(d['deviceId'] for d in json.load(sys.stdin))
+          print(' '.join(str(i) for i in ids))
+          ")
+          EXPECTED="1001 1002 2001 2002 2003 2004 3001 4001 4002"
+          test "$DEVICE_IDS" = "$EXPECTED" && echo "PASS: All device IDs match" || { echo "FAIL: got $DEVICE_IDS"; exit 1; }
+
+      - name: Verify network profile is local-network
+        run: |
+          curl -sf http://localhost:8099/api/devices | python3 -c "
+          import sys, json
+          devices = json.load(sys.stdin)
+          for d in devices:
+              profile = d.get('networkProfile', 'unknown')
+              if profile != 'local-network':
+                  print(f'FAIL: device {d[\"deviceId\"]} has profile {profile}')
+                  sys.exit(1)
+          print(f'PASS: All {len(devices)} devices have local-network profile')
+          "
+
+      - name: Verify AHU template object
+        run: |
+          RESP=$(curl -sf "http://localhost:8099/api/devices/1001/objects/analog-input/1")
+          echo "$RESP" | python3 -m json.tool
+          NAME=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+          test "$NAME" = "Supply Air Temp" && echo "PASS: AHU template verified" || { echo "FAIL: got $NAME"; exit 1; }
+
+      - name: Verify VAV template object
+        run: |
+          RESP=$(curl -sf "http://localhost:8099/api/devices/2001/objects/analog-input/1")
+          NAME=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+          test "$NAME" = "Zone Temp" && echo "PASS: VAV template verified" || { echo "FAIL: got $NAME"; exit 1; }
+
+      - name: Verify Boiler template object
+        run: |
+          RESP=$(curl -sf "http://localhost:8099/api/devices/3001/objects/analog-input/1")
+          NAME=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+          test "$NAME" = "Supply Water Temp" && echo "PASS: Boiler template verified" || { echo "FAIL: got $NAME"; exit 1; }
+
+      - name: Verify Meter template object
+        run: |
+          RESP=$(curl -sf "http://localhost:8099/api/devices/4001/objects/analog-input/1")
+          NAME=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+          test "$NAME" = "Power" && echo "PASS: Meter template verified" || { echo "FAIL: got $NAME"; exit 1; }
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f bacnet-sim 2>/dev/null || true
+
   test-action-custom-inputs:
     runs-on: ubuntu-latest
     name: Test action with custom inputs
