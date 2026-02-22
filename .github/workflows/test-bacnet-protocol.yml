@@ -1,0 +1,83 @@
+name: Test BACnet Protocol
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-bacnet-protocol:
+    runs-on: ubuntu-latest
+    name: BACnet/IP protocol smoke test
+
+    steps:
+      # ---- Checkout both repos ----
+      - name: Checkout simulator repo
+        uses: actions/checkout@v4
+        with:
+          repository: Rise-Building-Technology/bacnet-sim-ci
+          path: bacnet-sim-ci
+
+      - name: Checkout test repo
+        uses: actions/checkout@v4
+        with:
+          path: bacnet-sim-ci-test
+
+      # ---- Docker network ----
+      - name: Create Docker network (172.20.0.0/24)
+        run: docker network create --subnet=172.20.0.0/24 bacnet-test-net
+
+      # ---- Build simulator image ----
+      - name: Build simulator image
+        run: docker build -t bacnet-sim-ci:test ./bacnet-sim-ci
+
+      # ---- Start simulator ----
+      - name: Start simulator container
+        run: |
+          docker run -d \
+            --name bacnet-sim \
+            --network bacnet-test-net \
+            --ip 172.20.0.10 \
+            --cap-add=NET_ADMIN \
+            bacnet-sim-ci:test
+
+      # ---- Wait for readiness ----
+      - name: Wait for simulator readiness
+        run: |
+          echo "Waiting for simulator health endpoint..."
+          for i in $(seq 1 60); do
+            if docker exec bacnet-sim curl -sf http://localhost:8099/health/ready > /dev/null 2>&1; then
+              echo "Simulator is ready! (${i}s)"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "ERROR: Simulator not ready after 60 seconds"
+          docker logs bacnet-sim
+          exit 1
+
+      # ---- Build test client ----
+      - name: Build test client image
+        run: docker build -t bacnet-test-client ./bacnet-sim-ci-test/tests/bacnet
+
+      # ---- Run BACnet protocol tests ----
+      - name: Run BACnet protocol tests
+        run: |
+          docker run --rm \
+            --name bacnet-test-client \
+            --network bacnet-test-net \
+            --ip 172.20.0.100 \
+            bacnet-test-client
+
+      # ---- Diagnostics on failure ----
+      - name: Show simulator logs on failure
+        if: failure()
+        run: docker logs bacnet-sim
+
+      # ---- Cleanup ----
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f bacnet-sim 2>/dev/null || true
+          docker rm -f bacnet-test-client 2>/dev/null || true
+          docker network rm bacnet-test-net 2>/dev/null || true
