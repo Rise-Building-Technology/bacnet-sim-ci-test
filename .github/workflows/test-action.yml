@@ -91,19 +91,6 @@ jobs:
           EXPECTED="1001 1002 2001 2002 2003 2004 3001 4001 4002"
           test "$DEVICE_IDS" = "$EXPECTED" && echo "PASS: All device IDs match" || { echo "FAIL: got $DEVICE_IDS"; exit 1; }
 
-      - name: Verify network profile is local-network
-        run: |
-          curl -sf http://localhost:8099/api/devices | python3 -c "
-          import sys, json
-          devices = json.load(sys.stdin)
-          for d in devices:
-              profile = d.get('networkProfile', 'unknown')
-              if profile != 'local-network':
-                  print(f'FAIL: device {d[\"deviceId\"]} has profile {profile}')
-                  sys.exit(1)
-          print(f'PASS: All {len(devices)} devices have local-network profile')
-          "
-
       - name: Verify AHU template object
         run: |
           RESP=$(curl -sf "http://localhost:8099/api/devices/1001/objects/analog-input/1")

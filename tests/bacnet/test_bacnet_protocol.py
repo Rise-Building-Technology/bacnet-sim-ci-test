@@ -44,8 +44,12 @@ DEVICE_TABLE = [
     (4002, "Elec Meter Floor2","meter",  8),
 ]
 
-# Template-specific expected values for analogInput 1 (first AI on each type)
-TEMPLATE_AI1 = {
+# BAC0 factory auto-assigns 0-based instance numbers per object type,
+# regardless of the instance numbers in the template config.
+# Template instance 1 → BAC0 instance 0, template instance 2 → BAC0 instance 1, etc.
+
+# Template-specific expected values for analogInput 0 (first AI on each type)
+TEMPLATE_AI0 = {
     "ahu":    ("Supply Air Temp",   55.0),
     "vav":    ("Zone Temp",         72.0),
     "boiler": ("Supply Water Temp", 160.0),
@@ -125,8 +129,8 @@ async def test_whois(bacnet: BAC0.lite, device_ip: str, device_count: int) -> No
 
 
 async def test_per_device_reads(bacnet: BAC0.lite, base_ip: str, device_count: int) -> None:
-    """Read analogInput 1 from one device of each template type to verify values."""
-    print("\n--- Test: Per-Device-Type Reads (analogInput 1) ---")
+    """Read analogInput 0 from one device of each template type to verify values."""
+    print("\n--- Test: Per-Device-Type Reads (analogInput 0) ---")
 
     # Pick one representative device per template type
     seen_templates: set[str] = set()
@@ -136,24 +140,24 @@ async def test_per_device_reads(bacnet: BAC0.lite, base_ip: str, device_count: i
         seen_templates.add(template)
 
         ip = _ip_add(base_ip, offset)
-        expected_name, expected_val = TEMPLATE_AI1[template]
+        expected_name, expected_val = TEMPLATE_AI0[template]
         print(f"\n  [{template}] Device {did} ({name}) @ {ip}")
 
         try:
-            val = await bacnet.read(f"{ip} analogInput 1 presentValue")
-            check(f"{name}: AI-1 presentValue ~ {expected_val}",
+            val = await bacnet.read(f"{ip} analogInput 0 presentValue")
+            check(f"{name}: AI-0 presentValue ~ {expected_val}",
                   val is not None and abs(float(val) - expected_val) < 0.5,
                   f"got {val}")
         except Exception as e:
-            check(f"{name}: read AI-1 presentValue", False, str(e))
+            check(f"{name}: read AI-0 presentValue", False, str(e))
 
         try:
-            obj_name = await bacnet.read(f"{ip} analogInput 1 objectName")
-            check(f"{name}: AI-1 objectName = '{expected_name}'",
+            obj_name = await bacnet.read(f"{ip} analogInput 0 objectName")
+            check(f"{name}: AI-0 objectName = '{expected_name}'",
                   str(obj_name) == expected_name,
                   f"got {obj_name}")
         except Exception as e:
-            check(f"{name}: read AI-1 objectName", False, str(e))
+            check(f"{name}: read AI-0 objectName", False, str(e))
 
 
 async def test_device_object_name(bacnet: BAC0.lite, base_ip: str, device_count: int) -> None:
@@ -174,39 +178,39 @@ async def test_write_and_readback(bacnet: BAC0.lite, base_ip: str, device_count:
     """WriteProperty then ReadProperty round-trip on AHU and VAV."""
     print("\n--- Test: Write + ReadBack ---")
 
-    # Write to AHU-1 (device 1001) analogOutput 1 (Supply Air Temp Setpoint)
+    # Write to AHU-1 (device 1001) analogOutput 0 (Supply Air Temp Setpoint)
     ahu_ip = _ip_add(base_ip, 0)
-    print(f"\n  AHU-1 @ {ahu_ip}: write analogOutput 1 = 60.5")
+    print(f"\n  AHU-1 @ {ahu_ip}: write analogOutput 0 = 60.5")
     try:
-        await bacnet._write(f"{ahu_ip} analogOutput 1 presentValue 60.5 - 8")
+        await bacnet._write(f"{ahu_ip} analogOutput 0 presentValue 60.5 - 8")
         await asyncio.sleep(1)
-        val = await bacnet.read(f"{ahu_ip} analogOutput 1 presentValue")
+        val = await bacnet.read(f"{ahu_ip} analogOutput 0 presentValue")
         check("AHU-1: write 60.5 → read-back", abs(float(val) - 60.5) < 0.1,
               f"got {val}")
     except Exception as e:
-        check("AHU-1: write analogOutput 1", False, str(e))
+        check("AHU-1: write analogOutput 0", False, str(e))
 
-    # Write to VAV-101 (device 2001) analogOutput 1 (Cooling Setpoint)
+    # Write to VAV-101 (device 2001) analogOutput 0 (Cooling Setpoint)
     if device_count >= 3:
         vav_ip = _ip_add(base_ip, 2)
-        print(f"\n  VAV-101 @ {vav_ip}: write analogOutput 1 = 73.0")
+        print(f"\n  VAV-101 @ {vav_ip}: write analogOutput 0 = 73.0")
         try:
-            await bacnet._write(f"{vav_ip} analogOutput 1 presentValue 73.0 - 8")
+            await bacnet._write(f"{vav_ip} analogOutput 0 presentValue 73.0 - 8")
             await asyncio.sleep(1)
-            val = await bacnet.read(f"{vav_ip} analogOutput 1 presentValue")
+            val = await bacnet.read(f"{vav_ip} analogOutput 0 presentValue")
             check("VAV-101: write 73.0 → read-back", abs(float(val) - 73.0) < 0.1,
                   f"got {val}")
         except Exception as e:
-            check("VAV-101: write analogOutput 1", False, str(e))
+            check("VAV-101: write analogOutput 0", False, str(e))
 
 
 async def test_read_property_multiple(bacnet: BAC0.lite, base_ip: str) -> None:
     """ReadPropertyMultiple on AHU-1 for two properties at once."""
-    print("\n--- Test: ReadPropertyMultiple (AHU-1 analogInput 1) ---")
+    print("\n--- Test: ReadPropertyMultiple (AHU-1 analogInput 0) ---")
     ahu_ip = _ip_add(base_ip, 0)
     try:
         val = await bacnet.readMultiple(
-            f"{ahu_ip} analogInput 1 presentValue objectName"
+            f"{ahu_ip} analogInput 0 presentValue objectName"
         )
         print(f"  readMultiple result: {val}")
         check("RPM returned data", val is not None and len(val) > 0,
@@ -249,7 +253,7 @@ async def test_lag_timing(bacnet: BAC0.lite, base_ip: str, device_count: int) ->
         for _ in range(reads_per_target):
             t0 = time.monotonic()
             try:
-                await bacnet.read(f"{ip} analogInput 1 presentValue")
+                await bacnet.read(f"{ip} analogInput 0 presentValue")
                 elapsed_ms = (time.monotonic() - t0) * 1000
                 timings.append(elapsed_ms)
             except Exception:
